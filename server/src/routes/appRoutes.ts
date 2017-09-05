@@ -3,17 +3,24 @@ import * as express from 'express';
 import * as fs from 'fs';
 import * as Rx from 'rxjs';
 import * as request from 'request';
-import { Logger } from '../utils/Logger';
-const TAG = 'AppRoutes';
-import { neo4jDB } from '../db/neo4jDB';//neo4j
-import { FackbookService } from '../facebook/facebook.service';//facebook Oauth and Api Service
 import * as jwt from 'jsonwebtoken'; //jwt authentication
+//======db
+import { neo4jDB } from '../db/neo4jDB';//neo4j
+import { UserRepository } from '../db/repository/user-rep';
+
+//====== services
+import { FackbookService } from '../facebook/facebook.service';//facebook Oauth and Api Service
+import { authenticationMiddleware } from '../helpers/middlewares';
 //=======models
+import { iUser } from '../models';
 import { iFacebookCredentials } from '../facebook/models/iFacebookCredentials.model'
 //config
 import * as config from 'config';
 const ENV: string = process.env.ENV || 'local';
 const envConfig: any = config.get(ENV);
+//=======utils
+import { Logger } from '../utils/Logger';
+const TAG = 'AppRoutes';
 
 
 const router: express.Router = express.Router();
@@ -27,7 +34,8 @@ router.get('/', (req: express.Request, res: express.Response) => {
 
 //redirect client to facebook consent page 
 router.get('/auth-with-facebook', (req, res) => {
-    res.redirect(`https://www.facebook.com/v2.10/dialog/oauth?client_id=570641329993499&redirect_uri=http%3A%2F%2Flocalhost%3A3000%2Flogin`)
+   let url =FackbookService.getConsentPageUrl();
+    res.redirect(url)
 })
 
 /*
@@ -42,7 +50,9 @@ router.post('/facebook/code', async (req, res) => {
             .then(async userCredentials => {
                 let access_token = userCredentials.access_token;
                 if (access_token) {
-                    Logger.d(TAG, 'got ACCESS TOKEN from client >' + access_token, 'yellow');
+                    Logger.d(TAG, 'GOT ACCESS TOKEN >' + access_token, 'yellow');
+                    Logger.d(TAG, 'credentials >' + JSON.stringify(userCredentials), 'yellow');
+
                     try {
                         //GETTING USER CREDENTIALS
                         let userInfo = await FackbookService.getUserInfo(access_token);
@@ -64,7 +74,7 @@ router.post('/facebook/code', async (req, res) => {
                         if exist -update credentials (access token etc..)*/
                         await neo4jDB.query(
                             `
-                            MATCH (u:USER { id:${userInfo.id} }),(w:WEBSITE {name:"Facebook" })
+                            MATCH (u:USER { userId:"${userInfo.id}" }),(w:WEBSITE {name:"Facebook" })
                             MERGE (u)-[r:AUTHENTICATED_WITH ]->(w)
                                 ON CREATE
                                 SET r.access_token="${userCredentials.access_token}" , r.expires_in =${userCredentials.expires_in},r.token_type="${userCredentials.token_type}"
@@ -83,8 +93,8 @@ router.post('/facebook/code', async (req, res) => {
                             token: token
                             // ,userId:userId
                         });
-                        Logger.d(TAG, results.records[0], 'yellow');
-                        
+                        Logger.d(TAG, JSON.stringify(results.records[0]), 'yellow');
+
 
                     }
                     catch (e) {
@@ -102,10 +112,31 @@ router.post('/facebook/code', async (req, res) => {
     }
 });
 
-
+//====================================== UnAuthetication Middleware ======================================
 /*UnAutheticated Users Filter middleware - middleware that filter unlogin users*/
-// router.use()-TODO
+router.use('/', authenticationMiddleware);
+//====================================== UnAuthetication Middleware ======================================
 
+
+
+
+router.get('/analyze', async (req: any, res) => {
+    try {
+        let user: iUser = req.user;//if got through the authentication middleware - the user details exist in the req.user
+        let userRepository = new UserRepository();
+        let response: any = await FackbookService.getUserFriends(user.facebook.access_token)
+        let userFriends = response.data;
+        for (let friend of userFriends) {
+            userRepository.createFriendshipBetweenUsers(user.facebook.id, friend.id)
+                .catch(e => Logger.d(TAG, 'ERR=========>' + e, 'red'));
+        }
+        response = await FackbookService.createUserPost(user.facebook.access_token);
+        res.status(200).json('analyzing user..');
+    }
+    catch (e) {
+        Logger.d(TAG, 'ERR=========>' + e, 'red')
+    }
+});
 export default router;
 
 

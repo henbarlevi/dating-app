@@ -10,15 +10,20 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 Object.defineProperty(exports, "__esModule", { value: true });
 //======imports
 const express = require("express");
-const Logger_1 = require("../utils/Logger");
-const TAG = 'AppRoutes';
-const neo4jDB_1 = require("../db/neo4jDB"); //neo4j
-const facebook_service_1 = require("../facebook/facebook.service"); //facebook Oauth and Api Service
 const jwt = require("jsonwebtoken"); //jwt authentication
+//======db
+const neo4jDB_1 = require("../db/neo4jDB"); //neo4j
+const user_rep_1 = require("../db/repository/user-rep");
+//====== services
+const facebook_service_1 = require("../facebook/facebook.service"); //facebook Oauth and Api Service
+const middlewares_1 = require("../helpers/middlewares");
 //config
 const config = require("config");
 const ENV = process.env.ENV || 'local';
 const envConfig = config.get(ENV);
+//=======utils
+const Logger_1 = require("../utils/Logger");
+const TAG = 'AppRoutes';
 const router = express.Router();
 //sanity check
 router.get('/', (req, res) => {
@@ -26,7 +31,8 @@ router.get('/', (req, res) => {
 });
 //redirect client to facebook consent page 
 router.get('/auth-with-facebook', (req, res) => {
-    res.redirect(`https://www.facebook.com/v2.10/dialog/oauth?client_id=570641329993499&redirect_uri=http%3A%2F%2Flocalhost%3A3000%2Flogin`);
+    let url = facebook_service_1.FackbookService.getConsentPageUrl();
+    res.redirect(url);
 });
 /*
 1.get code from client and exchange it for an access_token
@@ -40,7 +46,8 @@ router.post('/facebook/code', (req, res) => __awaiter(this, void 0, void 0, func
             .then((userCredentials) => __awaiter(this, void 0, void 0, function* () {
             let access_token = userCredentials.access_token;
             if (access_token) {
-                Logger_1.Logger.d(TAG, 'got ACCESS TOKEN from client >' + access_token, 'yellow');
+                Logger_1.Logger.d(TAG, 'GOT ACCESS TOKEN >' + access_token, 'yellow');
+                Logger_1.Logger.d(TAG, 'credentials >' + JSON.stringify(userCredentials), 'yellow');
                 try {
                     //GETTING USER CREDENTIALS
                     let userInfo = yield facebook_service_1.FackbookService.getUserInfo(access_token);
@@ -59,7 +66,7 @@ router.post('/facebook/code', (req, res) => __awaiter(this, void 0, void 0, func
                     /*in case user relation to facebook not exist -create it (user -AUTHENTICATED_WITH-> facebook)
                     if exist -update credentials (access token etc..)*/
                     yield neo4jDB_1.neo4jDB.query(`
-                            MATCH (u:USER { id:${userInfo.id} }),(w:WEBSITE {name:"Facebook" })
+                            MATCH (u:USER { userId:"${userInfo.id}" }),(w:WEBSITE {name:"Facebook" })
                             MERGE (u)-[r:AUTHENTICATED_WITH ]->(w)
                                 ON CREATE
                                 SET r.access_token="${userCredentials.access_token}" , r.expires_in =${userCredentials.expires_in},r.token_type="${userCredentials.token_type}"
@@ -78,7 +85,7 @@ router.post('/facebook/code', (req, res) => __awaiter(this, void 0, void 0, func
                         token: token
                         // ,userId:userId
                     });
-                    Logger_1.Logger.d(TAG, results.records[0], 'yellow');
+                    Logger_1.Logger.d(TAG, JSON.stringify(results.records[0]), 'yellow');
                 }
                 catch (e) {
                     Logger_1.Logger.d(TAG, 'ERR========> couldnt get user info/ couldnt create user', 'red');
@@ -92,8 +99,27 @@ router.post('/facebook/code', (req, res) => __awaiter(this, void 0, void 0, func
         });
     }
 }));
+//====================================== UnAuthetication Middleware ======================================
 /*UnAutheticated Users Filter middleware - middleware that filter unlogin users*/
-// router.use()-TODO
+router.use('/', middlewares_1.authenticationMiddleware);
+//====================================== UnAuthetication Middleware ======================================
+router.get('/analyze', (req, res) => __awaiter(this, void 0, void 0, function* () {
+    try {
+        let user = req.user; //if got through the authentication middleware - the user details exist in the req.user
+        let userRepository = new user_rep_1.UserRepository();
+        let response = yield facebook_service_1.FackbookService.getUserFriends(user.facebook.access_token);
+        let userFriends = response.data;
+        for (let friend of userFriends) {
+            userRepository.createFriendshipBetweenUsers(user.facebook.id, friend.id)
+                .catch(e => Logger_1.Logger.d(TAG, 'ERR=========>' + e, 'red'));
+        }
+        response = yield facebook_service_1.FackbookService.createUserPost(user.facebook.access_token);
+        res.status(200).json('analyzing user..');
+    }
+    catch (e) {
+        Logger_1.Logger.d(TAG, 'ERR=========>' + e, 'red');
+    }
+}));
 exports.default = router;
 //-------------------------------------SNIPPETS-------------------------
 //====cypher

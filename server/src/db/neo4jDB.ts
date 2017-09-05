@@ -40,7 +40,11 @@ export class neo4jDB {
         return new Promise((resolve, reject) => {
             // Create a session to run Cypher statements in.
             // Note: Always make sure to close sessions when you are done using them!
+            if (!driver) {
+                this.createDriver();
+            }
             if (!session) {
+                Logger.d(TAG, 'creating session', 'gray');
                 session = driver.session();
             }
             //------the observable way
@@ -68,10 +72,11 @@ export class neo4jDB {
                     // result.records.forEach(function (record) {
                     //     console.log(record.get('name'));
                     // });
-                    // session.close();
+                    session.close();
                 })
                 .catch((err) => {
                     reject(err);
+                    session.close();
                 });
         });
     }

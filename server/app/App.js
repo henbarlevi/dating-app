@@ -26,7 +26,9 @@ class App {
             Logger_1.Logger.d(TAG, 'FAILED TO CONNECT TO NEO4j DB', 'red');
             Logger_1.Logger.d(TAG, err, 'red');
         });
-        neo4jDB_1.neo4jDB.setDefaultNodesIfNotExist().catch(err => {
+        neo4jDB_1.neo4jDB.setDefaultNodesIfNotExist()
+            .then(() => { Logger_1.Logger.d(TAG, 'facebook node exist/created', 'green'); }) //connect to neo4j db  
+            .catch(err => {
             Logger_1.Logger.d(TAG, 'FAILED TO CREATE Facebook default Node', 'red');
             Logger_1.Logger.d(TAG, err, 'red');
         });

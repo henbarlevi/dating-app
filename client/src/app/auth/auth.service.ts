@@ -6,7 +6,7 @@ import { Observable } from "rxjs";
 export class AuthService {
   baseUrl = 'http://localhost:3000';
   constructor(private http: Http) { }
-  errorHandler = error => console.error('Auth Service error', error);;
+  errorHandler = error => console.error('Auth Service error', error);
   loginWithFacebook() {
   return  this.http.get(`${this.baseUrl}/api/auth-with-facebook`).toPromise().then(res => {
       console.log(res)

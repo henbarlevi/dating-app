@@ -9,10 +9,10 @@ export const routing = RouterModule.forRoot([
     canActivate: [LoggedInGuard]
 
   },
-  {
-    path: 'login',
-    component: LoginComponent
-  },
+  // {
+  //   path: 'login',
+  //   component: LoginComponent
+  // },
   {
     path: '',
     redirectTo: '/home',
